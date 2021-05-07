@@ -1,0 +1,86 @@
+provider "google" {
+    project = "vti-sandbox"
+}
+
+data "google_compute_network" "devdl" {
+  name = "dl-network-new"
+}
+
+data "google_compute_subnetwork" "dldevsub" {
+  name = "postgres"
+  region = "asia-southeast1"
+}
+
+variable "priv_ip" {
+  default = "10.30.70.2"
+}
+
+data "template_file" "default" {
+    template = "${file("./script_init.sh")}"
+}
+
+resource "google_compute_instance" "example" {
+    name = "exampleinst"
+    machine_type = "e2-medium"
+    zone = "asia-southeast1-b"
+
+    tags = [ "examplevm" ]
+
+    boot_disk {
+      initialize_params {
+          image = "debian-cloud/debian-10"
+      }
+    }
+
+    network_interface {
+      network = "${data.google_compute_network.devdl.self_link}"
+      subnetwork = "${data.google_compute_subnetwork.dldevsub.self_link}"
+      network_ip = "${var.priv_ip}"
+      access_config {
+        
+      }
+    }
+
+    # provisioner "file" {
+    #     source = "./script_init.sh"
+    #     destination = "/tmp/script_init.sh"
+
+    #     connection {
+    #         type = "ssh"
+    #         user = "infra"
+    #         host = "${var.priv_ip}"
+    #     }
+    # }
+
+    provisioner "remote-exec" {
+        inline = [
+            "sleep 10",
+            "sudo apt install busybox",
+        ]
+        connection {
+            type = "ssh"
+            user = "infra"
+            host = "${var.priv_ip}"
+        }
+    }
+
+   metadata_startup_script = "${data.template_file.default.rendered}"
+
+    # metadata_startup_script = <<-EOF
+    #     #!/bin/bash
+    #     echo "Hello" > index.html
+    #     nohup busynpx httpd -f -p 8080 &
+    # EOF
+}
+
+output "outnetwork" {
+  value = "${data.google_compute_network.devdl.id}"
+}
+
+output "outsub" {
+  value = "${data.google_compute_subnetwork.dldevsub.self_link}"
+}
+
+output "vmout" {
+  value = "${google_compute_instance.example.network_interface.0.access_config.0.nat_ip}"
+}
